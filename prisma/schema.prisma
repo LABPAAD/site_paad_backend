@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  COORDENADOR
+  ADMINISTRADOR   // professor/orientador
+  MONITOR
+  DISCENTE
+}
+
+enum Status {
+  ATIVO
+  EGRESSO
+  INATIVO
+}
+
+enum FileType {
+  FOTO
+  RELATORIO
+  POSTER
+  OUTRO
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String?
+  role              Role      @default(DISCENTE)
+  status            Status    @default(ATIVO)
+  fullName          String
+  level             String?
+  researchArea      String?
+  linkLattes        String?
+  orcid             String?
+  currentLink       String?
+  consentGiven      Boolean   @default(false)
+  consentDate       DateTime?
+  advisorId         String?
+  advisor           User?     @relation("Advisor", fields: [advisorId], references: [id])
+  advisees          User[]    @relation("Advisor")
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  createdBy         String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relacionamentos com projetos, publicações, etc.
+  projectsAsCoord   Project[] @relation("ProjectCoordinator")
+  projectsAsMember  Project[] @relation("ProjectTeam")
+  publicationsAsAuthor Publication[] @relation("PublicationAuthors")
+  softwaresAsResponsible Software[] @relation("SoftwareResponsible")
+  softwaresAsMember      Software[] @relation("SoftwareTeam")
+
+  // 👇 Campo faltante: histórico de alterações
+  history           UserHistory[]
+}
+
+model Project {
+  id           String     @id @default(cuid())
+  title        String
+  type         String     // PIBIC, Mestrado, etc.
+  status       String     @default("ativo")
+  startDate    DateTime
+  endDate      DateTime?
+  summary      String
+  funding      String?
+
+  coordinator  User       @relation("ProjectCoordinator", fields: [coordinatorId], references: [id])
+  coordinatorId String
+
+  team         User[]     @relation("ProjectTeam")
+
+  publications Publication[] @relation("PublicationProjects")
+  softwares    Software[]   @relation("SoftwareProjects")
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Publication {
+  id           String     @id @default(cuid())
+  title        String
+  year         Int
+  venue        String
+  doi          String?
+  authors      String[]   // autores externos
+
+  paadAuthors  User[]     @relation("PublicationAuthors")
+  projects     Project[]  @relation("PublicationProjects")
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Software {
+  id           String     @id @default(cuid())
+  name         String
+  description  String
+  license      String
+  gitRepo      String?
+
+  responsible  User       @relation("SoftwareResponsible", fields: [responsibleId], references: [id])
+  responsibleId String
+
+  team         User[]     @relation("SoftwareTeam")
+  projects     Project[]  @relation("SoftwareProjects")
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model File {
+  id           String     @id @default(cuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  isPublic     Boolean    @default(false)
+  type         FileType
+  path         String
+
+  userId       String?    // vinculado a um usuário (ex: foto de perfil)
+  projectId    String?
+  publicationId String?
+  softwareId   String?
+
+  createdAt    DateTime   @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String   // ex: "user.create", "project.approve"
+  resource    String?
+  details     Json?
+  ip          String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+}
+
+model UserHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  eventType    String
+  oldValue     String?
+  newValue     String?
+  changedAt    DateTime @default(now())
+  changedBy    String?
+}
