@@ -1,0 +1,13 @@
+# Dependências locais
+node_modules
+
+# Arquivos de ambiente (NUNCA COPIAR O .ENV)
+.env
+
+# Arquivos do Docker
+Dockerfile
+docker-compose.yml
+
+# Git
+.git
+.gitignore
