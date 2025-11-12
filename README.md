@@ -93,3 +93,52 @@ Para **criar uma nova migração** após alterar o `schema.prisma`:
 # Rode este comando DENTRO do container
 docker-compose exec api npx prisma migrate dev --name nome-da-sua-migration
 ```
+
+
+
+- Schema: A "planta" do banco de dados está em prisma/schema.prisma.
+- Migrações: Os arquivos SQL de migração estão em prisma/migrations/.
+
+### ⚠️ Alterando o Schema (Workflow de Migração)
+Quando você alterar o arquivo prisma/schema.prisma, o processo de migração é mais complexo e requer os seguintes passos:
+
+1. Garanta o Volume no docker-compose.yml
+
+O prisma migrate dev precisa escrever o novo arquivo de migração na sua pasta prisma/migrations. Para que isso funcione, seu docker-compose.yml precisa ter um volume para a pasta prisma:
+
+```bash
+services:
+  api:
+    # ... (outras configurações)
+    volumes:
+      - ./prisma:/app/prisma
+  # ...
+```
+
+2. Pare os containers antigos (se estiverem rodando):
+```bash
+docker-compose down
+```
+
+3. Suba os containers em modo "detached" (-d):
+
+É crucial usar --build para que o container execute o npx prisma generate no Dockerfile e reconheça o novo schema.
+```bash
+docker-compose up --build -d
+```
+
+4. Crie e Aplique a Migração:
+
+Rode o comando migrate dev dentro do container da api. Dê um nome que descreva a mudança.
+```bash
+docker-compose exec api npx prisma migrate dev --name "nome-descritivo-da-mudanca"
+```
+
+O Prisma irá comparar o schema com o banco, criar o novo arquivo SQL de migração e aplicá-lo. Confirme (y) se ele avisar sobre perda de dados (em ambiente de dev, isso é esperado ao alterar tipos de colunas).
+
+5. Reinicie a API:
+
+Para garantir que o servidor Node.js carregue o novo Prisma Client gerado:
+```bash
+docker-compose restart api
+```

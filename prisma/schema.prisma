@@ -7,9 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ENUMERATORS (Tipos de Opções)
+
 enum Role {
   COORDENADOR
-  ADMINISTRADOR   // professor/orientador
+  ADMINISTRADOR // professor/orientador
   MONITOR
   DISCENTE
 }
@@ -17,7 +19,7 @@ enum Role {
 enum Status {
   ATIVO
   EGRESSO
-  INATIVO
+  INATIVO // Usado para usuários pendentes de aprovação ou desativados
 }
 
 enum FileType {
@@ -27,132 +29,229 @@ enum FileType {
   OUTRO
 }
 
+// Enum para Status de Projeto
+enum ProjectStatus {
+  ATIVO
+  ENCERRADO
+  INATIVO // Usado para "soft delete" ou arquivamento
+}
+
+// Enum para Status de Publicação
+enum PublicationStatus {
+  PUBLICADO
+  PENDENTE
+  ARQUIVADO // Usado para "soft delete"
+}
+
+// MODELS (Tabelas do Banco)
+
 model User {
-  id                String    @id @default(cuid())
-  email             String    @unique
-  password          String?
-  role              Role      @default(DISCENTE)
-  status            Status    @default(ATIVO)
-  fullName          String
-  level             String?
-  researchArea      String?
-  linkLattes        String?
-  orcid             String?
-  currentLink       String?
-  consentGiven      Boolean   @default(false)
-  consentDate       DateTime?
-  advisorId         String?
-  advisor           User?     @relation("Advisor", fields: [advisorId], references: [id])
-  advisees          User[]    @relation("Advisor")
-  twoFactorEnabled  Boolean   @default(false)
-  twoFactorSecret   String?
-  createdBy         String?
-  approvedBy        String?
-  approvedAt        DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  password           String?
+  role               Role      @default(DISCENTE)
+  status             Status    @default(ATIVO)
+  fullName           String
+  level              String?
+  researchArea       String?
+  linkLattes         String?
+  orcid              String?
+  currentLink        String?
+  consentGiven       Boolean   @default(false)
+  consentDate        DateTime?
+  twoFactorEnabled   Boolean   @default(false)
+  twoFactorSecret    String?
+  createdBy          String?   // ID do usuário que criou esta conta
+  approvedBy         String?   // ID do usuário que aprovou
+  approvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  
+  passwordResetToken   String?   @unique
+  passwordResetExpires DateTime?
 
-  // Relacionamentos com projetos, publicações, etc.
-  projectsAsCoord   Project[] @relation("ProjectCoordinator")
-  projectsAsMember  Project[] @relation("ProjectTeam")
+  // --- Relações ---
+  advisorId          String?
+  advisor            User?     @relation("Advisor", fields: [advisorId], references: [id])
+  advisees           User[]    @relation("Advisor")
+
+  projectsAsCoord    Project[]     @relation("ProjectCoordinator")
+  projectsAsMember   Project[]     @relation("ProjectTeam")
   publicationsAsAuthor Publication[] @relation("PublicationAuthors")
-  softwaresAsResponsible Software[] @relation("SoftwareResponsible")
-  softwaresAsMember      Software[] @relation("SoftwareTeam")
+  softwaresAsResponsible Software[]  @relation("SoftwareResponsible")
+  softwaresAsMember  Software[]    @relation("SoftwareTeam")
 
-  // 👇 Campo faltante: histórico de alterações
-  history           UserHistory[]
+  history            UserHistory[] @relation("UserHistory") 
+  historyChanges     UserHistory[] @relation("ChangedBy")   
+  auditLogs          AuditLog[]                             
+  files              File[]
+  notifications      Notification[]
+
+  projectHistoryChanges     ProjectHistory[]     @relation("ProjectHistoryChanges")
+  publicationHistoryChanges PublicationHistory[] @relation("PublicationHistoryChanges")
 }
 
 model Project {
-  id           String     @id @default(cuid())
-  title        String
-  type         String     // PIBIC, Mestrado, etc.
-  status       String     @default("ativo")
-  startDate    DateTime
-  endDate      DateTime?
-  summary      String
-  funding      String?
+  id            String    @id @default(cuid())
+  title         String
+  type          String    // PIBIC, Mestrado, etc.
+  
+  status        ProjectStatus @default(ATIVO)
+  
+  startDate     DateTime
+  endDate       DateTime?
+  summary       String
+  funding       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  coordinator  User       @relation("ProjectCoordinator", fields: [coordinatorId], references: [id])
+  // --- Relações ---
+  coordinator   User      @relation("ProjectCoordinator", fields: [coordinatorId], references: [id])
   coordinatorId String
-
-  team         User[]     @relation("ProjectTeam")
-
-  publications Publication[] @relation("PublicationProjects")
-  softwares    Software[]   @relation("SoftwareProjects")
-
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  team          User[]    @relation("ProjectTeam")
+  publications  Publication[] @relation("PublicationProjects")
+  softwares     Software[]    @relation("SoftwareProjects")
+  files         File[]
+  history       ProjectHistory[]
 }
 
 model Publication {
-  id           String     @id @default(cuid())
-  title        String
-  year         Int
-  venue        String
-  doi          String?
-  authors      String[]   // autores externos
+  id          String    @id @default(cuid())
+  title       String
+  year        Int
+  venue       String
+  doi         String?
+  authors     String[]  // autores externos
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  paadAuthors  User[]     @relation("PublicationAuthors")
-  projects     Project[]  @relation("PublicationProjects")
-
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  // Campo status para Soft Delete (BD-006)
+  status      PublicationStatus @default(PUBLICADO)
+  
+  // --- Relações ---
+  paadAuthors User[]    @relation("PublicationAuthors")
+  projects    Project[] @relation("PublicationProjects")
+  files       File[]
+  history     PublicationHistory[]
 }
 
 model Software {
-  id           String     @id @default(cuid())
-  name         String
-  description  String
-  license      String
-  gitRepo      String?
+  id            String    @id @default(cuid())
+  name          String
+  description   String
+  license       String
+  gitRepo       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  responsible  User       @relation("SoftwareResponsible", fields: [responsibleId], references: [id])
+  // --- Relações ---
+  responsible   User      @relation("SoftwareResponsible", fields: [responsibleId], references: [id])
   responsibleId String
-
-  team         User[]     @relation("SoftwareTeam")
-  projects     Project[]  @relation("SoftwareProjects")
-
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  team          User[]    @relation("SoftwareTeam")
+  projects      Project[] @relation("SoftwareProjects")
+  files         File[]
 }
 
 model File {
-  id           String     @id @default(cuid())
+  id           String   @id @default(cuid())
   filename     String
   originalName String
   mimeType     String
   size         Int
-  isPublic     Boolean    @default(false)
+  isPublic     Boolean  @default(false)
   type         FileType
   path         String
+  createdAt    DateTime @default(now())
 
-  userId       String?    // vinculado a um usuário (ex: foto de perfil)
+  // --- Relações ---
+  // Vinculado a um usuário (ex: foto de perfil)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  
+  // Vinculado a um projeto (ex: relatório)
   projectId    String?
+  project      Project? @relation(fields: [projectId], references: [id])
+  
+  // Vinculado a uma publicação (ex: poster, pdf)
   publicationId String?
+  publication   Publication? @relation(fields: [publicationId], references: [id])
+  
+  // Vinculado a um software (ex: doc, imagem)
   softwareId   String?
-
-  createdAt    DateTime   @default(now())
+  software     Software? @relation(fields: [softwareId], references: [id])
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  action      String   // ex: "user.create", "project.approve"
-  resource    String?
-  details     Json?
-  ip          String?
-  userAgent   String?
-  timestamp   DateTime @default(now())
+  id        String   @id @default(cuid())
+  action    String   // ex: "USER_CREATE", "PROJECT_APPROVE"
+  resource  String?  // ex: "User", "Project"
+  details   Json?
+  ip        String?
+  userAgent String?
+  timestamp DateTime @default(now())
+
+  // --- Relações (ALTERADO) ---
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
 }
 
 model UserHistory {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id])
-  eventType    String
-  oldValue     String?
-  newValue     String?
-  changedAt    DateTime @default(now())
-  changedBy    String?
+  id        String   @id @default(cuid())
+  eventType String
+  oldValue  String?
+  newValue  String?
+  changedAt DateTime @default(now())
+
+  // --- Relações (ALTERADO) ---
+  // A qual usuário este histórico pertence
+  userId    String
+  user      User     @relation("UserHistory", fields: [userId], references: [id])
+  
+  // Quem fez a alteração
+  changedBy String?
+  changedByUser User?  @relation("ChangedBy", fields: [changedBy], references: [id])
+}
+
+
+// Modelo para BD-008 (Notificações)
+model Notification {
+  id        String   @id @default(cuid())
+  message   String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  // Relação: Quem deve receber esta notificação
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// Modelo para BD-010 (Histórico de Projeto)
+model ProjectHistory {
+  id        String   @id @default(cuid())
+  eventType String
+  oldValue  String?
+  newValue  String?
+  changedAt DateTime @default(now())
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+
+  changedBy String?
+  changedByUser User?  @relation("ProjectHistoryChanges", fields: [changedBy], references: [id])
+}
+
+// Modelo para BD-010 (Histórico de Publicação)
+model PublicationHistory {
+  id        String   @id @default(cuid())
+  eventType String
+  oldValue  String?
+  newValue  String?
+  changedAt DateTime @default(now())
+  
+  publicationId String
+  publication   Publication @relation(fields: [publicationId], references: [id])
+
+  changedBy     String?
+  changedByUser User?     @relation("PublicationHistoryChanges", fields: [changedBy], references: [id])
 }
