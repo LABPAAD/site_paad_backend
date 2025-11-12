@@ -16,6 +16,8 @@ services:
     depends_on:
       - db
     restart: always
+    volumes:
+      - ./prisma:/app/prisma
 
   # Serviço do Banco de Dados (PostgreSQL)
   db:
