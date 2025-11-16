@@ -5,19 +5,22 @@ services:
   api:
     build: .
     ports:
-      # Mapeia a porta externa (da sua máquina) para a porta interna (do container)
-      # Ex: "3500:3000"
       - "${API_EXTERNAL_PORT}:${PORT}"
     environment:
-      # Monta a URL de conexão do Prisma usando as variáveis do .env
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
-      # Passa a porta interna para o container, para o server.js ler
       PORT: ${PORT}
+
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      COOKIE_NAME: ${COOKIE_NAME}
+      COOKIE_SECURE: ${COOKIE_SECURE}
     depends_on:
       - db
     restart: always
     volumes:
-      - ./prisma:/app/prisma
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
 
   # Serviço do Banco de Dados (PostgreSQL)
   db:
