@@ -20,9 +20,13 @@ export class AuthController {
 
         const result = await AuthService.login(email, password, requestMetadata);
 
-        // Se 2FA estiver habilitado (dependência BD-002)
+        // Se 2FA estiver habilitado
         if (result.twoFactorRequired) {
-        return res.status(200).json({ "2fa_required": true });
+          return res.status(200).json({
+            "2fa_required": true,
+            email: result.email,
+            userId: result.userId, // opcional, se quiser usar no frontend
+          });
         }
 
         const { token, user } = result;
@@ -108,4 +112,119 @@ export class AuthController {
       return next(error);
     }
   }
+
+
+
+static async generate2FA(req, res, next) {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'Não autenticado.' });
+      }
+
+      const result = await AuthService.generateTwoFactorSecret(userId);
+
+      return res.status(200).json({
+        qrCodeDataUrl: result.qrCodeDataUrl,
+        otpauthUrl: result.otpauthUrl,
+      });
+    } catch (error) {
+      console.error(error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Erro ao gerar 2FA.';
+      return res.status(statusCode).json({ message });
+    }
+  }
+
+  static async verifyEnable2FA(req, res, next) {
+    try {
+      const userId = req.user?.id;
+      const { code } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'Não autenticado.' });
+      }
+
+      if (!code) {
+        return res.status(400).json({ message: 'Código 2FA é obrigatório.' });
+      }
+
+      const requestMetadata = {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      };
+
+      await AuthService.verifyAndEnableTwoFactor(userId, code, requestMetadata);
+
+      return res.status(200).json({
+        message: '2FA ativado com sucesso.',
+      });
+    } catch (error) {
+      console.error(error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Erro ao ativar 2FA.';
+      return res.status(statusCode).json({ message });
+    }
+  }
+
+  static async verify2FALogin(req, res, next) {
+    try {
+      const { email, code } = req.body;
+
+      if (!email || !code) {
+        return res.status(400).json({ message: 'E-mail e código 2FA são obrigatórios.' });
+      }
+
+      const requestMetadata = {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      };
+
+      const { token, user } = await AuthService.verifyTwoFactorLogin(email, code, requestMetadata);
+
+      const cookieName = getCookieName();
+
+      res.cookie(cookieName, token, {
+        httpOnly: true,
+        secure: isCookieSecure(),
+        sameSite: 'lax',
+      });
+
+      return res.status(200).json({ user });
+    } catch (error) {
+      console.error(error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Erro na verificação de login 2FA.';
+      return res.status(statusCode).json({ message });
+    }
+  }
+
+  static async disable2FA(req, res, next) {
+    try {
+      const userId = req.user?.id;
+      const { currentPassword, code } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'Não autenticado.' });
+      }
+
+      const requestMetadata = {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      };
+
+      await AuthService.disableTwoFactor(userId, { currentPassword, code }, requestMetadata);
+
+      return res.status(200).json({
+        message: '2FA desativado com sucesso.',
+      });
+    } catch (error) {
+      console.error(error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Erro ao desativar 2FA.';
+      return res.status(statusCode).json({ message });
+    }
+  }
+
 }
