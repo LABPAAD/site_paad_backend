@@ -227,4 +227,23 @@ static async generate2FA(req, res, next) {
     }
   }
 
+
+static async me(req, res, next) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'Não autenticado.' });
+      }
+
+      // req.user já foi montado pelo requireAuth
+      return res.status(200).json({
+        user: req.user,
+      });
+    } catch (error) {
+      console.error(error);
+      const statusCode = error.statusCode || 500;
+      const message = error.message || 'Erro ao obter usuário autenticado.';
+      return res.status(statusCode).json({ message });
+    }
+  } 
+
 }

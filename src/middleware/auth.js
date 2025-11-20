@@ -7,56 +7,66 @@ export async function requireAuth(req, res, next) {
   try {
     const cookieName = getCookieName();
 
-    // 1) Tenta pegar do cookie
+    // 1) Tenta pegar o token do cookie (fluxo normal do frontend)
     let token = req.cookies?.[cookieName];
 
-    // 2) Fallback: tenta pegar do header Authorization: Bearer <token>
+    // 2) Fallback: Authorization: Bearer <token> (útil pra Insomnia/Postman)
     if (!token) {
-      const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.slice(7); // remove "Bearer "
+      const authHeader = req.headers.authorization || '';
+      const [scheme, value] = authHeader.split(' ');
+      if (scheme === 'Bearer' && value) {
+        token = value;
       }
     }
 
     if (!token) {
-      // TODO[BD-011]: Registrar acesso não autenticado no AuditLog (401)
-      return res.status(401).json({ message: 'Não autenticado.' });
+      const err = new Error('Não autenticado.');
+      err.statusCode = 401;
+      throw err;
     }
 
+    // 3) Valida o JWT
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      // TODO[BD-011]: Registrar token inválido/expirado no AuditLog (401)
-      return res.status(401).json({ message: 'Sessão inválida ou expirada.' });
+    } catch (e) {
+      const err = new Error('Token inválido ou expirado.');
+      err.statusCode = 401;
+      throw err;
     }
 
+    // payload.sub deve ser o ID do usuário
     const userId = payload.sub;
-
-    if (!userId) {
-      return res.status(401).json({ message: 'Sessão inválida.' });
-    }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user || user.status !== 'ATIVO') {
-      // TODO[BD-011]: Registrar acesso com usuário inexistente/inativo (401)
-      return res.status(401).json({ message: 'Usuário não autorizado.' });
+      const err = new Error('Usuário não encontrado ou inativo.');
+      err.statusCode = 401;
+      throw err;
     }
 
+    // Monta um objeto "seguro" para req.user (sem senha, sem segredos)
+    const { id, email, fullName, role, status, twoFactorEnabled } = user;
+
     req.user = {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      fullName: user.fullName,
+      id,
+      email,
+      fullName,
+      role,
+      status,
+      twoFactorEnabled,
     };
+
+    // TODO[BD-011]: Registrar falhas 401 no AuditLog, se necessário
 
     return next();
   } catch (error) {
-    console.error('[requireAuth] Erro inesperado:', error);
-    return res.status(500).json({ message: 'Erro interno de autenticação.' });
+    console.error('[requireAuth] erro:', error);
+    const statusCode = error.statusCode || 401;
+    const message = error.message || 'Não autenticado.';
+    return res.status(statusCode).json({ message });
   }
 }

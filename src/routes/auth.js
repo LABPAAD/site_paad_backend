@@ -10,6 +10,9 @@ router.post('/logout', AuthController.logout);
 router.post('/forgot-password', AuthController.forgotPassword);
 router.post('/reset-password', AuthController.resetPassword);
 
+// retorna usuário autenticado
+router.get('/me', requireAuth, AuthController.me);
+
 // 2FA - protegido (usuário logado)
 router.post('/2fa/generate', requireAuth, AuthController.generate2FA);
 router.post('/2fa/verify-enable', requireAuth, AuthController.verifyEnable2FA);
