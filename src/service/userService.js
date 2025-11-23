@@ -79,4 +79,10 @@ export class UserService {
 
     return users;
   }
+
+  static async updateData(input) {
+    const updatedData = await UserRepository.update(input);
+
+    return updatedData;
+  }
 };

@@ -26,4 +26,12 @@ export class UserRepository {
             where: {advisorId}
         });
     }
+
+    static async update(data) {
+        const { id, ...rest } = data;
+        return await prisma.user.update({
+            where: { id },
+            data: rest
+        });
+    }
 }
