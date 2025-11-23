@@ -34,12 +34,4 @@ export class UserRepository {
             data: rest
         });
     }
-
-
-    // static async updateStatus(id, status) {
-    //     return await prisma.user.update({
-    //         where: {id},
-    //         status
-    //     });
-    // }
 }

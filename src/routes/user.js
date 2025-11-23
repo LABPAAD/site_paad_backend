@@ -50,13 +50,16 @@ router.get(
 
 
 // PUT /api/users/atualizar-dados
+// Permitido: COORDENADOR, ADMINISTRADOR, MONITOR
 router.put(
   '/atualizar-dados',
   requireAuth,
+  requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
   updateData
 )
 
-
+// GET /api/users/atualizar-status
+// Permitido: COORDENADOR, ADMINISTRADOR, MONITOR
 router.put(
   '/atualizar-status',
   requireAuth,
