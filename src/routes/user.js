@@ -4,6 +4,7 @@ import {
   getUserByRole,
   getAllUsers,
   getUserByAdvisor,
+  updateData
 } from '../controllers/userController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
@@ -24,7 +25,7 @@ router.post(
 router.get(
   '/buscar',
   requireAuth,
-  requireRole(['COORDENADOR', 'ADMINISTRADOR']),
+  // requireRole(['COORDENADOR', 'ADMINISTRADOR']),
   getAllUsers
 );
 
@@ -45,5 +46,13 @@ router.get(
   requireRole(['COORDENADOR', 'ADMINISTRADOR']),
   getUserByAdvisor
 );
+
+
+// PUT /api/users/atualizar-dados
+router.put(
+  '/atualizar-dados',
+  requireAuth,
+  updateData
+)
 
 export default router;
