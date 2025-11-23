@@ -1,26 +1,24 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/authController.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-// POST /api/auth/login
-router.post('/login', (req, res, next) =>
-  AuthController.login(req, res, next)
-);
+// Login / Logout / Recuperação de senha
+router.post('/login', AuthController.login);
+router.post('/logout', AuthController.logout);
+router.post('/forgot-password', AuthController.forgotPassword);
+router.post('/reset-password', AuthController.resetPassword);
 
-// POST /api/auth/logout
-router.post('/logout', (req, res, next) =>
-  AuthController.logout(req, res, next)
-);
+// retorna usuário autenticado
+router.get('/me', requireAuth, AuthController.me);
 
-// POST /api/auth/forgot-password
-router.post('/forgot-password', (req, res, next) =>
-  AuthController.forgotPassword(req, res, next)
-);
+// 2FA - protegido (usuário logado)
+router.post('/2fa/generate', requireAuth, AuthController.generate2FA);
+router.post('/2fa/verify-enable', requireAuth, AuthController.verifyEnable2FA);
+router.post('/2fa/disable', requireAuth, AuthController.disable2FA);
 
-// POST /api/auth/reset-password
-router.post('/reset-password', (req, res, next) =>
-  AuthController.resetPassword(req, res, next)
-);
+// 2FA - verificação de login (público, após {"2fa_required": true})
+router.post('/2fa/login-verify', AuthController.verify2FALogin);
 
-export default router;
+export default router; 

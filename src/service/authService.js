@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRepository } from '../repositories/userRepository.js';
 import { prisma } from '../config/db.js';
+import { authenticator } from 'otplib';
+import qrcode from 'qrcode';
 
 // Controle simples em memória para brute force (sem mexer no schema)
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -97,9 +99,10 @@ export class AuthService {
 
     // Verificar se 2FA está habilitado
     if (user.twoFactorEnabled) {
-      // [DEPENDÊNCIA: BD-002] fluxo de 2FA entra aqui
       return {
         twoFactorRequired: true,
+        userId: user.id,
+        email: user.email,
       };
     }
 
@@ -227,6 +230,201 @@ export class AuthService {
 
     // TODO[BD-011]: Registrar troca de senha no AuditLog
     // await AuditService.logPasswordChange({ userId: user.id, ...requestMetadata });
+
+    return { success: true };
+  }
+
+
+  static async generateTwoFactorSecret(userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || user.status !== 'ATIVO') {
+      const error = new Error('Usuário não encontrado ou inativo.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Gera segredo TOTP
+    const secret = authenticator.generateSecret();
+
+    // Gera otpauth:// URL para app autenticador
+    const issuer = 'PAAD UFPI';
+    const label = user.email; // pode customizar, ex: PAAD (${user.email})
+    const otpauthUrl = authenticator.keyuri(label, issuer, secret);
+
+    // Salva segredo no banco, mas NÃO habilita o 2FA ainda
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorSecret: secret,
+        twoFactorEnabled: false,
+      },
+    });
+
+    // Gera QR Code em data URL para o frontend exibir
+    const qrCodeDataUrl = await qrcode.toDataURL(otpauthUrl);
+
+    return {
+      otpauthUrl,
+      qrCodeDataUrl,
+    };
+  }
+
+
+static async verifyAndEnableTwoFactor(userId, code, requestMetadata = {}) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || user.status !== 'ATIVO') {
+      const error = new Error('Usuário não encontrado ou inativo.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (!user.twoFactorSecret) {
+      const error = new Error('2FA não foi iniciado para este usuário.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const isValid = authenticator.check(code, user.twoFactorSecret);
+
+    if (!isValid) {
+      const error = new Error('Código 2FA inválido.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorEnabled: true,
+      },
+    });
+
+    // TODO[BD-011]: Registrar ativação de 2FA no AuditLog
+    // await AuditService.logTwoFactorEnabled({ userId: user.id, ...requestMetadata });
+
+    // Opcional: gerar códigos de backup no futuro
+    return { success: true };
+  }
+
+
+
+static async verifyTwoFactorLogin(email, code, requestMetadata = {}) {
+    const user = await UserRepository.findByEmail(email);
+
+    if (!user || user.status !== 'ATIVO' || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      const error = new Error('Usuário não autorizado para login com 2FA.');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const isValid = authenticator.check(code, user.twoFactorSecret);
+
+    if (!isValid) {
+      const error = new Error('Código 2FA inválido.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // TODO[BD-011]: Registrar login com 2FA no AuditLog
+    // await AuditService.logTwoFactorLogin({ userId: user.id, email: user.email, ...requestMetadata });
+
+    const tokenPayload = {
+      sub: user.id,
+      role: user.role,
+    };
+
+    const token = jwt.sign(
+      tokenPayload,
+      process.env.JWT_SECRET,
+      {
+        expiresIn: process.env.JWT_EXPIRES_IN || '1h',
+      },
+    );
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        status: user.status,
+      },
+    };
+  }
+
+
+
+static async disableTwoFactor(userId, { currentPassword, code } = {}, requestMetadata = {}) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || user.status !== 'ATIVO') {
+      const error = new Error('Usuário não encontrado ou inativo.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // 2FA obrigatório para Coordenador e Administrador
+    if (['COORDENADOR', 'ADMINISTRADOR'].includes(user.role)) {
+      const error = new Error('2FA é obrigatório para este perfil e não pode ser desativado.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      const error = new Error('2FA não está habilitado para este usuário.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!currentPassword && !code) {
+      const error = new Error('É necessário informar a senha atual ou um código 2FA para desativar o 2FA.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let verified = false;
+
+    // Verifica senha, se fornecida
+    if (currentPassword && user.password) {
+      const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+      if (passwordMatch) {
+        verified = true;
+      }
+    }
+
+    // Se ainda não foi verificado por senha, tenta verificar por código 2FA
+    if (!verified && code) {
+      const isValidCode = authenticator.check(code, user.twoFactorSecret);
+      if (isValidCode) {
+        verified = true;
+      }
+    }
+
+    if (!verified) {
+      const error = new Error('Credenciais inválidas para desativar o 2FA.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+      },
+    });
+
+    // TODO[BD-011]: Registrar desativação de 2FA no AuditLog
+    // await AuditService.logTwoFactorDisabled({ userId: user.id, ...requestMetadata });
 
     return { success: true };
   }
