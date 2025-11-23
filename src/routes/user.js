@@ -4,7 +4,8 @@ import {
   getUserByRole,
   getAllUsers,
   getUserByAdvisor,
-  updateData
+  updateData,
+  updateStatus
 } from '../controllers/userController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
@@ -53,6 +54,14 @@ router.put(
   '/atualizar-dados',
   requireAuth,
   updateData
+)
+
+
+router.put(
+  '/atualizar-status',
+  requireAuth,
+  requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
+  updateStatus
 )
 
 export default router;

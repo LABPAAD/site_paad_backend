@@ -45,3 +45,13 @@ export const updateData = async (req, res) => {
         return res.json(error);
     }
 };
+
+export const updateStatus = async (req, res) => {
+    try {
+        const updatedData = await UserService.updateData(req.body);
+
+        return res.status(200).json(updatedData);
+    } catch (error) {
+        return res.json(error);
+    }
+};
