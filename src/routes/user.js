@@ -1,70 +1,117 @@
 import { Router } from 'express';
 import {
   createUser,
-  getUserByRole,
   getAllUsers,
-  getUserByAdvisor,
-  updateData,
-  updateStatus
+  getUserById,
+  updateUser,
+  inactivateUser,
 } from '../controllers/userController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 
 const router = Router();
 
-// POST /api/users/cadastrar-aluno
-// Permitido: COORDENADOR, ADMINISTRADOR, MONITOR
+/**
+ * Base: /api/user
+ *
+ * As rotas abaixo assumem que este router está montado em src/routes/index.js como:
+ *   router.use('/user', userRoutes);
+ *
+ * Assim, os endpoints expostos são:
+ *   - POST   /api/user/        → Criar pessoa (User)
+ *   - GET    /api/user/        → Listar pessoas com filtros (?role=&status=&advisorId=)
+ *   - GET    /api/user/:id     → Detalhar pessoa por ID
+ *   - PUT    /api/user/:id     → Atualizar dados de uma pessoa
+ *   - DELETE /api/user/:id     → Desativar pessoa (status = INATIVO, soft delete)
+ */
+
+/**
+ * POST /api/user/
+ * Cria uma nova pessoa (User).
+ * Permissões: COORDENADOR, ADMINISTRADOR, MONITOR
+ *
+ * Observações de negócio:
+ * - Se role === 'DISCENTE', advisorId é obrigatório.
+ * - Se o criador for MONITOR, o usuário é criado como INATIVO e sem approvedBy (BD-007).
+ */
 router.post(
-  '/cadastrar-aluno',
+  '/',
   requireAuth,
   requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
   createUser
 );
 
-// GET /api/users/buscar
-// Permitido: COORDENADOR, ADMINISTRADOR
+/**
+ * GET /api/user/
+ * Lista pessoas com filtros opcionais:
+ *   - ?role=COORDENADOR|ADMINISTRADOR|MONITOR|DISCENTE
+ *   - ?status=ATIVO|INATIVO|EGRESSO
+ *   - ?advisorId=<id do orientador>
+ *
+ * Permissões: COORDENADOR, ADMINISTRADOR
+ *
+ * Sempre omite campos sensíveis (password, twoFactorSecret, etc).
+ */
 router.get(
-  '/buscar',
+  '/',
   requireAuth,
-  // requireRole(['COORDENADOR', 'ADMINISTRADOR']),
+  requireRole(['COORDENADOR', 'ADMINISTRADOR']),
   getAllUsers
 );
 
-// GET /api/users/buscar-role
-// Permitido: COORDENADOR, ADMINISTRADOR
+/**
+ * GET /api/user/:id
+ * Obtém os dados de uma pessoa específica.
+ *
+ * Inclui relações úteis:
+ *   - advisor (orientador)
+ *   - advisees (orientandos)
+ *   - projectsAsMember
+ *
+ * Permissões: COORDENADOR, ADMINISTRADOR
+ */
 router.get(
-  '/buscar-role',
+  '/:id',
   requireAuth,
   requireRole(['COORDENADOR', 'ADMINISTRADOR']),
-  getUserByRole
+  getUserById
 );
 
-// GET /api/users/buscar-por-orientador
-// Permitido: COORDENADOR, ADMINISTRADOR
-router.get(
-  '/buscar-por-orientador',
+/**
+ * PUT /api/user/:id
+ * Atualiza dados de uma pessoa (User).
+ *
+ * Campos típicos: email, fullName, level, researchArea, linkLattes,
+ * currentLink, status, role, advisorId, etc.
+ *
+ * Permissões: COORDENADOR, ADMINISTRADOR, MONITOR
+ * (a lógica mais fina de quem pode editar o quê fica no service – BD-003, BD-005, etc.)
+ */
+router.put(
+  '/:id',
+  requireAuth,
+  requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
+  updateUser
+);
+
+/**
+ * DELETE /api/user/:id
+ * Desativa uma pessoa (soft delete).
+ *
+ * Em vez de remover o registro, altera:
+ *   status = INATIVO
+ *
+ * Permissões: COORDENADOR, ADMINISTRADOR
+ *
+ * Observação:
+ * - BD-010: mudança de status deve gerar histórico em UserHistory (feito no service futuramente).
+ * - BD-011: ação deve ser registrada no AuditLog (gancho no service).
+ */
+router.delete(
+  '/:id',
   requireAuth,
   requireRole(['COORDENADOR', 'ADMINISTRADOR']),
-  getUserByAdvisor
+  inactivateUser
 );
-
-
-// PUT /api/users/atualizar-dados
-// Permitido: COORDENADOR, ADMINISTRADOR, MONITOR
-router.put(
-  '/atualizar-dados',
-  requireAuth,
-  requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
-  updateData
-)
-
-// GET /api/users/atualizar-status
-// Permitido: COORDENADOR, ADMINISTRADOR, MONITOR
-router.put(
-  '/atualizar-status',
-  requireAuth,
-  requireRole(['COORDENADOR', 'ADMINISTRADOR', 'MONITOR']),
-  updateStatus
-)
 
 export default router;
