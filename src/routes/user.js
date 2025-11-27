@@ -48,14 +48,10 @@ router.post(
  *   - ?status=ATIVO|INATIVO|EGRESSO
  *   - ?advisorId=<id do orientador>
  *
- * Permissões: COORDENADOR, ADMINISTRADOR
- *
  * Sempre omite campos sensíveis (password, twoFactorSecret, etc).
  */
 router.get(
   '/',
-  requireAuth,
-  requireRole(['COORDENADOR', 'ADMINISTRADOR']),
   getAllUsers
 );
 
@@ -67,13 +63,9 @@ router.get(
  *   - advisor (orientador)
  *   - advisees (orientandos)
  *   - projectsAsMember
- *
- * Permissões: COORDENADOR, ADMINISTRADOR
  */
 router.get(
   '/:id',
-  requireAuth,
-  requireRole(['COORDENADOR', 'ADMINISTRADOR']),
   getUserById
 );
 
