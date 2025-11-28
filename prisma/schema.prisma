@@ -7,21 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ENUMERATORS (Tipos de Opções)
-
+/// Perfis de acesso ao sistema (RBAC).
 enum Role {
+  /// Coordenação do laboratório, acesso global.
   COORDENADOR
-  ADMINISTRADOR // professor/orientador
+
+  /// Docentes/orientadores do laboratório (antigo ADMINISTRADOR).
+  LAB_DOCENTE
+
+  /// Discentes com permissões administrativas específicas.
   MONITOR
-  DISCENTE
+
+  /// Usuários gerais (discentes e visitantes) na perspectiva de permissão.
+  USUARIO
+
+
+  // Valores legados – mantidos por compatibilidade e por limitação do Postgres 15
+  ADMINISTRADOR // legado, tratar como LAB_DOCENTE no código
+  DISCENTE      // legado, tratar como USUARIO no código
 }
 
+/// Situação atual do usuário em relação ao uso da conta.
 enum Status {
+  /// Conta ativa.
   ATIVO
+
+  /// Egresso do laboratório (já passou pelo PAAD).
   EGRESSO
-  INATIVO // Usado para usuários pendentes de aprovação ou desativados
+
+  /// Conta inativa ou pendente de aprovação.
+  INATIVO
 }
 
+/// Tipo de vínculo do usuário com o laboratório.
+enum LabBond {
+  /// Docente vinculado ao PAAD.
+  DOCENTE
+
+  /// Discente vinculado ao PAAD.
+  DISCENTE
+
+  /// Visitante/colaborador externo.
+  VISITANTE
+}
+
+/// Tipos de arquivos gerenciados pelo sistema.
 enum FileType {
   FOTO
   RELATORIO
@@ -29,229 +59,568 @@ enum FileType {
   OUTRO
 }
 
-// Enum para Status de Projeto
+/// Situação do projeto de pesquisa.
 enum ProjectStatus {
   ATIVO
   ENCERRADO
-  INATIVO // Usado para "soft delete" ou arquivamento
+  INATIVO
 }
 
-// Enum para Status de Publicação
+/// Situação da publicação científica.
 enum PublicationStatus {
   PUBLICADO
   PENDENTE
-  ARQUIVADO // Usado para "soft delete"
+  ARQUIVADO
 }
 
-// MODELS (Tabelas do Banco)
-
+/// Usuários do sistema e membros do laboratório.
 model User {
-  id                 String    @id @default(cuid())
-  email              String    @unique
+  /// Identificador único do usuário.
+  id                 String   @id @default(cuid())
+
+  /// E-mail institucional ou preferencial.
+  email              String   @unique
+
+  /// Hash da senha de acesso (se aplicável).
   password           String?
-  role               Role      @default(DISCENTE)
-  status             Status    @default(ATIVO)
+
+  /// Perfil de acesso (RBAC).
+  role               Role
+
+  /// Situação da conta no sistema.
+  status             Status   @default(ATIVO)
+
+  /// Nome completo da pessoa.
   fullName           String
+
+  /// Nível/etapa (ex.: graduação, mestrado, doutorado).
   level              String?
+
+  /// Área de pesquisa principal.
   researchArea       String?
+
+  /// Link para currículo Lattes.
   linkLattes         String?
+
+  /// Identificador ORCID.
   orcid              String?
+
+  /// Link pessoal/portfólio (site, GitHub, etc.).
   currentLink        String?
-  consentGiven       Boolean   @default(false)
+
+  /// Vínculo acadêmico com o laboratório (docente, discente, visitante).
+  labBond            LabBond?
+
+  /// Curso ou programa (ex.: Sistemas de Informação).
+  program            String?
+
+  /// Instituição (ex.: UFPI).
+  institution        String?
+
+  /// Unidade ou departamento (ex.: Departamento de Computação).
+  unitOrDepartment   String?
+
+  /// Indica se o usuário deu consentimento para uso/visualização de dados.
+  consentGiven       Boolean  @default(false)
+
+  /// Data em que o consentimento foi registrado.
   consentDate        DateTime?
-  twoFactorEnabled   Boolean   @default(false)
+
+  /// Indica se o perfil público do usuário está habilitado.
+  publicProfileEnabled     Boolean  @default(true)
+
+  /// Permissão específica para exibir e-mail em contexto público.
+  allowPublicEmail         Boolean  @default(false)
+
+  /// Permissão específica para exibir links pessoais em contexto público.
+  allowPublicPersonalLinks Boolean  @default(false)
+
+  /// Permissão específica para exibir avatar/foto em contexto público.
+  allowPublicAvatar        Boolean  @default(false)
+
+  /// Flag de 2FA habilitado.
+  twoFactorEnabled   Boolean  @default(false)
+
+  /// Segredo TOTP para 2FA.
   twoFactorSecret    String?
-  createdBy          String?   // ID do usuário que criou esta conta
-  approvedBy         String?   // ID do usuário que aprovou
+
+  /// Identificador de quem criou a conta.
+  createdBy          String?
+
+  /// Identificador de quem aprovou a conta.
+  approvedBy         String?
+
+  /// Data/hora de aprovação da conta.
   approvedAt         DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  
+
+  /// Data de criação do registro.
+  createdAt          DateTime @default(now())
+
+  /// Data da última atualização do registro.
+  updatedAt          DateTime @updatedAt
+
+  /// Token de recuperação de senha (hash).
   passwordResetToken   String?   @unique
+
+  /// Expiração do token de recuperação de senha.
   passwordResetExpires DateTime?
 
-  // --- Relações ---
+  /// Texto de apresentação para páginas públicas.
+  bio           String?
+
+  /// Slug único para URLs amigáveis (páginas públicas).
+  slug          String? @unique
+
+  /// Referência ao arquivo de avatar/foto de perfil.
+  avatarFileId  String?
+
+  /// Relação com o usuário orientador principal (legado).
   advisorId          String?
-  advisor            User?     @relation("Advisor", fields: [advisorId], references: [id])
-  advisees           User[]    @relation("Advisor")
 
-  projectsAsCoord    Project[]     @relation("ProjectCoordinator")
-  projectsAsMember   Project[]     @relation("ProjectTeam")
-  publicationsAsAuthor Publication[] @relation("PublicationAuthors")
-  softwaresAsResponsible Software[]  @relation("SoftwareResponsible")
-  softwaresAsMember  Software[]    @relation("SoftwareTeam")
+  /// Usuário que é orientador principal deste usuário (legado).
+  advisor            User?          @relation("Advisor", fields: [advisorId], references: [id])
 
-  history            UserHistory[] @relation("UserHistory") 
-  historyChanges     UserHistory[] @relation("ChangedBy")   
-  auditLogs          AuditLog[]                             
-  files              File[]
-  notifications      Notification[]
+  /// Usuários orientados por este usuário como orientador principal (legado).
+  advisees           User[]         @relation("Advisor")
 
+  /// Relações de orientadores/coorientadores deste usuário.
+  advisors           UserAdvisor[]  @relation("AdvisorsForUser")
+
+  /// Relações de usuários que este usuário orienta/coorienta.
+  coAdvisees         UserAdvisor[]  @relation("AdvisorOfMany")
+
+  /// Arquivo utilizado como avatar/foto de perfil.
+  avatarFile         File?          @relation("UserAvatarFile", fields: [avatarFileId], references: [id])
+
+  /// Projetos em que o usuário é coordenador.
+  projectsAsCoord        Project[]          @relation("ProjectCoordinator")
+
+  /// Projetos em que o usuário é membro da equipe.
+  projectsAsMember       Project[]          @relation("ProjectTeam")
+
+  /// Publicações em que o usuário é autor vinculado ao PAAD.
+  publicationsAsAuthor   Publication[]      @relation("PublicationAuthors")
+
+  /// Softwares em que o usuário é responsável principal.
+  softwaresAsResponsible Software[]         @relation("SoftwareResponsible")
+
+  /// Softwares em que o usuário participa como membro.
+  softwaresAsMember      Software[]         @relation("SoftwareTeam")
+
+  /// Histórico de alterações de dados relacionados ao usuário.
+  history                UserHistory[]      @relation("UserHistory")
+
+  /// Histórico de alterações realizadas por este usuário em outros usuários.
+  historyChanges         UserHistory[]      @relation("ChangedBy")
+
+  /// Registros de auditoria vinculados ao usuário.
+  auditLogs              AuditLog[]
+
+  /// Arquivos diversos vinculados ao usuário.
+  files                  File[]             @relation("UserFiles")
+
+  /// Notificações recebidas pelo usuário.
+  notifications          Notification[]
+
+  /// Registros de histórico de projeto alterados por este usuário.
   projectHistoryChanges     ProjectHistory[]     @relation("ProjectHistoryChanges")
+
+  /// Registros de histórico de publicação alterados por este usuário.
   publicationHistoryChanges PublicationHistory[] @relation("PublicationHistoryChanges")
+
+  /// Histórico de vínculo do usuário com o laboratório.
+  labBondHistory       UserLabBondHistory[]
 }
 
+/// Projetos de pesquisa vinculados ao laboratório.
 model Project {
+  /// Identificador do projeto.
   id            String    @id @default(cuid())
-  title         String
-  type          String    // PIBIC, Mestrado, etc.
-  
-  status        ProjectStatus @default(ATIVO)
-  
-  startDate     DateTime
-  endDate       DateTime?
-  summary       String
-  funding       String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 
-  // --- Relações ---
-  coordinator   User      @relation("ProjectCoordinator", fields: [coordinatorId], references: [id])
+  /// Título do projeto.
+  title         String
+
+  /// Tipo do projeto (ex.: PIBIC, Mestrado, etc.).
+  type          String
+
+  /// Situação do projeto.
+  status        ProjectStatus @default(ATIVO)
+
+  /// Data de início do projeto.
+  startDate     DateTime
+
+  /// Data de encerramento do projeto (se aplicável).
+  endDate       DateTime?
+
+  /// Resumo descritivo do projeto.
+  summary       String
+
+  /// Fonte de financiamento (quando houver).
+  funding       String?
+
+  /// Data de criação do registro.
+  createdAt     DateTime @default(now())
+
+  /// Data da última atualização do registro.
+  updatedAt     DateTime @updatedAt
+
+  /// Coordenador do projeto.
+  coordinator   User     @relation("ProjectCoordinator", fields: [coordinatorId], references: [id])
+
+  /// Identificador do coordenador do projeto.
   coordinatorId String
-  team          User[]    @relation("ProjectTeam")
+
+  /// Equipe de usuários vinculados ao projeto.
+  team          User[]   @relation("ProjectTeam")
+
+  /// Publicações associadas ao projeto.
   publications  Publication[] @relation("PublicationProjects")
+
+  /// Softwares associados ao projeto.
   softwares     Software[]    @relation("SoftwareProjects")
+
+  /// Arquivos vinculados ao projeto.
   files         File[]
+
+  /// Histórico de alterações do projeto.
   history       ProjectHistory[]
 }
 
+/// Produções científicas e técnicas vinculadas ao laboratório.
 model Publication {
-  id          String    @id @default(cuid())
-  title       String
-  year        Int
-  venue       String
-  doi         String?
-  authors     String[]  // autores externos
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  /// Identificador da publicação.
+  id          String   @id @default(cuid())
 
-  // Campo status para Soft Delete (BD-006)
+  /// Título da publicação.
+  title       String
+
+  /// Ano da publicação.
+  year        Int
+
+  /// Veículo de publicação (periódico, evento, etc.).
+  venue       String
+
+  /// DOI da publicação (quando houver).
+  doi         String?
+
+  /// Lista de autores externos (não vinculados ao PAAD).
+  authors     String[]
+
+  /// Data de criação do registro.
+  createdAt   DateTime @default(now())
+
+  /// Data da última atualização do registro.
+  updatedAt   DateTime @updatedAt
+
+  /// Situação da publicação.
   status      PublicationStatus @default(PUBLICADO)
-  
-  // --- Relações ---
-  paadAuthors User[]    @relation("PublicationAuthors")
+
+  /// Autores vinculados ao PAAD.
+  paadAuthors User[]   @relation("PublicationAuthors")
+
+  /// Projetos associados à publicação.
   projects    Project[] @relation("PublicationProjects")
+
+  /// Arquivos vinculados à publicação.
   files       File[]
+
+  /// Histórico de alterações da publicação.
   history     PublicationHistory[]
 }
 
+/// Softwares/sistemas desenvolvidos ou mantidos pelo laboratório.
 model Software {
-  id            String    @id @default(cuid())
-  name          String
-  description   String
-  license       String
-  gitRepo       String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  /// Identificador do software.
+  id            String   @id @default(cuid())
 
-  // --- Relações ---
-  responsible   User      @relation("SoftwareResponsible", fields: [responsibleId], references: [id])
+  /// Nome do software.
+  name          String
+
+  /// Descrição resumida.
+  description   String
+
+  /// Tipo de licença (ex.: MIT, GPL, proprietário).
+  license       String
+
+  /// Repositório de código (Git) associado.
+  gitRepo       String?
+
+  /// Data de criação do registro.
+  createdAt     DateTime @default(now())
+
+  /// Data da última atualização do registro.
+  updatedAt     DateTime @updatedAt
+
+  /// Usuário responsável principal pelo software.
+  responsible   User     @relation("SoftwareResponsible", fields: [responsibleId], references: [id])
+
+  /// Identificador do responsável principal.
   responsibleId String
-  team          User[]    @relation("SoftwareTeam")
+
+  /// Equipe de usuários vinculados ao software.
+  team          User[]   @relation("SoftwareTeam")
+
+  /// Projetos associados ao software.
   projects      Project[] @relation("SoftwareProjects")
+
+  /// Arquivos vinculados ao software.
   files         File[]
 }
 
+/// Arquivos armazenados e vinculados a usuários, projetos, publicações ou softwares.
 model File {
+  /// Identificador do arquivo.
   id           String   @id @default(cuid())
+
+  /// Nome interno do arquivo armazenado.
   filename     String
+
+  /// Nome original enviado pelo usuário.
   originalName String
+
+  /// Tipo MIME do arquivo.
   mimeType     String
+
+  /// Tamanho do arquivo em bytes.
   size         Int
+
+  /// Indica se o arquivo é público.
   isPublic     Boolean  @default(false)
+
+  /// Tipo de arquivo.
   type         FileType
+
+  /// Caminho físico ou lógico de armazenamento.
   path         String
+
+  /// Data de criação do registro.
   createdAt    DateTime @default(now())
 
-  // --- Relações ---
-  // Vinculado a um usuário (ex: foto de perfil)
+  /// Usuário ao qual o arquivo está vinculado (arquivo genérico).
   userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
-  
-  // Vinculado a um projeto (ex: relatório)
+
+  /// Relação com o usuário (arquivos genéricos).
+  user         User?    @relation("UserFiles", fields: [userId], references: [id])
+
+  /// Usuários que utilizam este arquivo como avatar.
+  avatarOfUsers User[]  @relation("UserAvatarFile")
+
+  /// Projeto ao qual o arquivo está vinculado.
   projectId    String?
+
+  /// Relação com o projeto.
   project      Project? @relation(fields: [projectId], references: [id])
-  
-  // Vinculado a uma publicação (ex: poster, pdf)
+
+  /// Publicação à qual o arquivo está vinculado.
   publicationId String?
+
+  /// Relação com a publicação.
   publication   Publication? @relation(fields: [publicationId], references: [id])
-  
-  // Vinculado a um software (ex: doc, imagem)
+
+  /// Software ao qual o arquivo está vinculado.
   softwareId   String?
+
+  /// Relação com o software.
   software     Software? @relation(fields: [softwareId], references: [id])
 }
 
+/// Registros de auditoria de ações relevantes no sistema.
 model AuditLog {
+  /// Identificador do registro de auditoria.
   id        String   @id @default(cuid())
-  action    String   // ex: "USER_CREATE", "PROJECT_APPROVE"
-  resource  String?  // ex: "User", "Project"
+
+  /// Ação executada (ex.: USER_CREATE, PROJECT_APPROVE).
+  action    String
+
+  /// Tipo de recurso afetado (ex.: User, Project).
+  resource  String?
+
+  /// Detalhes adicionais em formato JSON.
   details   Json?
+
+  /// Endereço IP de origem.
   ip        String?
+
+  /// User-Agent da requisição.
   userAgent String?
+
+  /// Data/hora do registro.
   timestamp DateTime @default(now())
 
-  // --- Relações (ALTERADO) ---
+  /// Identificador do usuário que originou a ação.
   userId    String?
+
+  /// Relação com o usuário que originou a ação.
   user      User?    @relation(fields: [userId], references: [id])
 }
 
+/// Histórico de alterações de dados de usuários.
 model UserHistory {
+  /// Identificador do registro de histórico.
   id        String   @id @default(cuid())
+
+  /// Tipo de evento (ex.: CREATE, UPDATE_STATUS).
   eventType String
+
+  /// Valor anterior (serializado, quando aplicável).
   oldValue  String?
+
+  /// Novo valor (serializado, quando aplicável).
   newValue  String?
+
+  /// Data/hora da alteração.
   changedAt DateTime @default(now())
 
-  // --- Relações (ALTERADO) ---
-  // A qual usuário este histórico pertence
+  /// Identificador do usuário ao qual o histórico pertence.
   userId    String
+
+  /// Relação com o usuário ao qual o histórico pertence.
   user      User     @relation("UserHistory", fields: [userId], references: [id])
-  
-  // Quem fez a alteração
+
+  /// Identificador de quem realizou a alteração.
   changedBy String?
-  changedByUser User?  @relation("ChangedBy", fields: [changedBy], references: [id])
+
+  /// Relação com o usuário que realizou a alteração.
+  changedByUser User? @relation("ChangedBy", fields: [changedBy], references: [id])
 }
 
-
-// Modelo para BD-008 (Notificações)
+/// Notificações direcionadas a usuários.
 model Notification {
+  /// Identificador da notificação.
   id        String   @id @default(cuid())
+
+  /// Conteúdo da mensagem.
   message   String
+
+  /// Indica se a notificação já foi lida.
   read      Boolean  @default(false)
+
+  /// Link associado à notificação (quando aplicável).
   link      String?
+
+  /// Data/hora de criação da notificação.
   createdAt DateTime @default(now())
 
-  // Relação: Quem deve receber esta notificação
+  /// Identificador do usuário destinatário.
   userId    String
+
+  /// Relação com o usuário destinatário.
   user      User     @relation(fields: [userId], references: [id])
 }
 
-// Modelo para BD-010 (Histórico de Projeto)
+/// Histórico de alterações de projetos.
 model ProjectHistory {
+  /// Identificador do registro de histórico.
   id        String   @id @default(cuid())
+
+  /// Tipo de evento (ex.: CREATE, UPDATE_STATUS).
   eventType String
+
+  /// Valor anterior (serializado, quando aplicável).
   oldValue  String?
+
+  /// Novo valor (serializado, quando aplicável).
   newValue  String?
+
+  /// Data/hora da alteração.
   changedAt DateTime @default(now())
 
+  /// Identificador do projeto ao qual o histórico pertence.
   projectId String
+
+  /// Relação com o projeto ao qual o histórico pertence.
   project   Project  @relation(fields: [projectId], references: [id])
 
+  /// Identificador de quem realizou a alteração.
   changedBy String?
-  changedByUser User?  @relation("ProjectHistoryChanges", fields: [changedBy], references: [id])
+
+  /// Relação com o usuário que realizou a alteração.
+  changedByUser User? @relation("ProjectHistoryChanges", fields: [changedBy], references: [id])
 }
 
-// Modelo para BD-010 (Histórico de Publicação)
+/// Histórico de alterações de publicações.
 model PublicationHistory {
+  /// Identificador do registro de histórico.
   id        String   @id @default(cuid())
+
+  /// Tipo de evento (ex.: CREATE, UPDATE_STATUS).
   eventType String
+
+  /// Valor anterior (serializado, quando aplicável).
   oldValue  String?
+
+  /// Novo valor (serializado, quando aplicável).
   newValue  String?
+
+  /// Data/hora da alteração.
   changedAt DateTime @default(now())
-  
+
+  /// Identificador da publicação à qual o histórico pertence.
   publicationId String
+
+  /// Relação com a publicação à qual o histórico pertence.
   publication   Publication @relation(fields: [publicationId], references: [id])
 
+  /// Identificador de quem realizou a alteração.
   changedBy     String?
-  changedByUser User?     @relation("PublicationHistoryChanges", fields: [changedBy], references: [id])
+
+  /// Relação com o usuário que realizou a alteração.
+  changedByUser User? @relation("PublicationHistoryChanges", fields: [changedBy], references: [id])
+}
+
+/// Histórico de vínculo do usuário com o laboratório.
+model UserLabBondHistory {
+  /// Identificador do registro de histórico de vínculo.
+  id         String   @id @default(cuid())
+
+  /// Identificador do usuário.
+  userId     String
+
+  /// Relação com o usuário ao qual o vínculo se refere.
+  user       User     @relation(fields: [userId], references: [id])
+
+  /// Vínculo do usuário no período (docente, discente, visitante).
+  labBond    LabBond
+
+  /// Papel de acesso do usuário no período.
+  role       Role
+
+  /// Situação do usuário naquele período (ativo, egresso, inativo).
+  status     Status
+
+  /// Data de início do vínculo.
+  startDate  DateTime
+
+  /// Data de término do vínculo (quando encerrado).
+  endDate    DateTime?
+
+  /// Data/hora de criação do registro de histórico.
+  createdAt  DateTime @default(now())
+
+  /// Identificador de quem criou este registro de histórico.
+  createdBy  String?
+}
+
+/// Relação de orientação/coorientação entre usuários.
+model UserAdvisor {
+  /// Identificador da relação de orientação.
+  id         String   @id @default(cuid())
+
+  /// Identificador do usuário orientado.
+  userId     String
+
+  /// Relação com o usuário orientado.
+  user       User     @relation("AdvisorsForUser", fields: [userId], references: [id])
+
+  /// Identificador do usuário orientador/coorientador.
+  advisorId  String
+
+  /// Relação com o usuário orientador/coorientador.
+  advisor    User     @relation("AdvisorOfMany", fields: [advisorId], references: [id])
+
+  /// Indica se este orientador é o principal.
+  isPrimary  Boolean  @default(false)
+
+  /// Data/hora de criação da relação.
+  createdAt  DateTime @default(now())
 }

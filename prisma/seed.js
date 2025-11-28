@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = 'admin@email.com';
+  const email = 'admin@admin.com';
   const plainPassword = '12345678';
 
   // Verifica se já existe usuário com esse e-mail
